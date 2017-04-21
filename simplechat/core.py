@@ -51,7 +51,7 @@ class ChatRoom(object):
         try:
             client.send('\n<= ' + data + '\n=> ')
         except Exception:  # silent exception, because reasons are obvious
-            self.clientss.remove(client)
+            self.clients.remove(client)
 
     def publish(self, client, data):
         """Publish in chatroom as given client"""
@@ -84,7 +84,7 @@ class SocketServer(object):
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.rooms = list()
+        self.rooms = {}
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.setblocking(False)
@@ -147,37 +147,58 @@ class SocketServer(object):
                 client.send('<= Create one, by using "/join room_name"')
             else:
                 client.send('<= Active rooms are:\n')
-                for room in self.rooms:
+                for name, room in self.rooms:
                     client.send(
-                        '<= * {0} ({1})\n'.format(
-                            room.channel_name,
-                            len(room.clients))
+                        '<= * {0} ({1})\n'.format(name, len(room.clients))
                         )
                 client.send('<= End of list')
         elif message.startswith('/join'):  # join a chat room
             name = message.split('/join ')[1]
-            current_room = if USERS[user].get('room')
+            current_room = USERS[user].get('room')
             if current_room == name:
                 client.send('<= You are already here')
             elif current_room:
-                self.protocol(user, '/leave {0}'.format(current_room))
+                self.protocol(user, '/leave')
+            elif name not in self.rooms:  # create room
+                room = ChatRoom(name)
+                self.rooms[name] = room
+                room.start()
             else:
-                room = filter(lambda x: x.channel_name==name, self.rooms)
-                if not room:  # create it
-                    room = ChatRoom(name)
-                    self.rooms.append(room)
-                    room.start()
-                else:
-                    room = room[0]
-                room.register(client)
-                room.publish(
-                    client, 'new user joined the room: {0}'.format(user)
+                room = self.rooms[name]
+            room.register(client)
+            USERS[user]['room'] = name
+            room.publish(
+                client, 'new user joined the room: {0}'.format(user)
+                )
+            client.send('<= Entering room: {0}'.format(name))
+            for i, infos in USERS.items():
+                if i == user:
+                    client.send('<= * {0} (**this is you)'.format(user))
+                elif infos['connection'] in room.clients:
+                    client.send('<= * {0}'.format(user))
+            client.send('<= End of list')
+        elif message == '/leave':
+            current_room = USERS[user].get('room')
+            if current_room:
+                self.rooms[current_room].clients.remove(client)
+                del USERS[user]['room']
+        elif message == '/quit':
+            self.protocol(user, '/leave')
+            client.send('<= BYE')
+            del USERS[user]
+        elif message.startswith('/'):
+            client.send('<= Sorry, unknown command')
+        elif message and USERS[user].get('room'):
+            self.rooms[USERS[user].get('room')].publish(
+                client,
+                json.dumps(
+                    {
+                        'user': client,
+                        'message': '{0}: {1}'.format(user, message)
+                        }
                     )
-                client.send('<= Entering room: {0}'.format(name))
-                for i, infos in USERS.items():
-                    if i == user:
-                        client.send('<= * {0} (**this is you)'.format(user))
-                    elif infos['connection'] in room.clients:
-                        client.send('<= * {0}'.format(user))
-                client.send('<= End of list')
+                )
+        else:
+            pass
+            
 # EOF
