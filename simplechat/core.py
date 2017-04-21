@@ -32,6 +32,9 @@ class ChatRoom(object):
         self.pubsub = redis_server.pubsub()
         self.pubsub.subscribe(self.channel_name)
 
+    def __str__(self):
+        return '<ChatRoom {0}>'.format(self.channel_name)
+
     def __unpack__(self):
         """Yield out data from pubsub"""
         for item in self.pubsub.listen():
@@ -41,19 +44,26 @@ class ChatRoom(object):
 
     def register(self, client):
         """Register a client's connection"""
-        try:
-            client.setblocking(False)
-        except AttributeError:
-            pass
         self.clients.append(client)
 
     def send(self, client, data):
         """Send data to registered client. Delete on failure"""
         try:
-            client.send(data + '\n=> ')
+            client.send('\n<= ' + data + '\n=> ')
         except Exception:  # silent exception, because reasons are obvious
             self.clientss.remove(client)
-        
+
+    def publish(self, client, data):
+        """Publish in chatroom as given client"""
+        redis_server.publish(
+            json.dumps(
+                {
+                    'user': str(client),
+                    'message': data
+                    }
+                )
+            )
+            
     def run(self):
         """Listen and send messages"""
         for data in self.__unpack__():
@@ -74,6 +84,7 @@ class SocketServer(object):
     def __init__(self, host, port):
         self.host = host
         self.port = port
+        self.rooms = list()
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.setblocking(False)
@@ -94,7 +105,7 @@ class SocketServer(object):
                     client.send('<= Sorry, username already taken\n')
                 elif name:
                     client.setblocking(False)
-                    USERS[name] = client
+                    USERS[name] = {'connection': client}
                     client.send('<= Welcome {0}\n=> '.format(name))
                     break
                 else:
@@ -111,12 +122,62 @@ class SocketServer(object):
 
     def recv(self):
         """Continuously accept incoming messages"""
-        for user, client in USERS.items():
+        for user, infos in USERS.items():
             try:
-                message = client.recv(1024).strip()
+                message = infos['connection'].recv(1024).strip()
             except socket.error:
                 continue
+            process_messages(user, message)
+            client.send('\n=> ')
             time.sleep(.1)
-        
-            
+
+    def protocol(self, user, message):
+        """Process messages"""
+        client = USERS[user]['connection']
+        if message.split()[0] in ['@'+i for i in USERS]:  # DM
+            recipient = message.split()[0]
+            message = message.split(recipient)[1]
+            for i, j in USERS.items():
+                if '@'+i == recipient:
+                    client.send('<= ({0}) {1}'.format(user, message))
+                    break
+        elif message == '/rooms':  # list rooms and their users
+            if not self.rooms:
+                conn.send('<= No active room detected')
+                conn.send('<= Create one, by using "/join room_name"')
+            else:
+                conn.send('<= Active rooms are:\n')
+                for room in self.rooms:
+                    conn.send(
+                        '<= * {0} ({1})\n'.format(
+                            room.channel_name,
+                            len(room.clients))
+                        )
+                conn.send('<= End of list')
+        elif message.startswith('/join'):  # join a chat room
+            name = message.split('/join ')[1]
+            current_room = if USERS[user].get('room')
+            if current_room == name:
+                client.send('<= You are already here')
+            elif current_room:
+                self.protocol(user, '/leave {0}'.format(current_room))
+            else:
+                room = filter(lambda x: x.channel_name==name, self.rooms)
+                if not room:  # create it
+                    room = ChatRoom(name)
+                    self.rooms.append(room)
+                    room.start()
+                else:
+                    room = room[0]
+                room.register(client)
+                room.publish(
+                    client, 'new user joined the room: {0}'.format(user)
+                    )
+                client.send('<= Entering room: {0}'.format(name))
+                for i, infos in USERS.items():
+                    if i == user:
+                        client.send('<= * {0} (**this is you)'.format(user))
+                    elif infos['connection'] in room.clients:
+                        client.send('<= * {0}'.format(user))
+                client.send('<= End of list')
 # EOF
