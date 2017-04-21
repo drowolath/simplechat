@@ -9,6 +9,7 @@ users are subscribed.
 Users are stored in a dictionnary.
 """
 
+import json
 import os
 import redis
 import thread
@@ -49,7 +50,13 @@ class ChatRoom(object):
         
     def run(self):
         """Listen and send messages"""
-        pass  # filter publisher out
+        for data in self.__unpack__():
+            data = json.loads(data)
+            publisher = data['user']
+            message = data['message']
+            for client in self.clients:
+                if str(client) != publisher:
+                    thread.start_new_thread(self.send, client, data['message'])
 
     def start(self):
         thread.start_new_thread(self.run, ())
