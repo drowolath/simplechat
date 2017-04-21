@@ -143,17 +143,17 @@ class SocketServer(object):
                     break
         elif message == '/rooms':  # list rooms and their users
             if not self.rooms:
-                conn.send('<= No active room detected')
-                conn.send('<= Create one, by using "/join room_name"')
+                client.send('<= No active room detected')
+                client.send('<= Create one, by using "/join room_name"')
             else:
-                conn.send('<= Active rooms are:\n')
+                client.send('<= Active rooms are:\n')
                 for room in self.rooms:
-                    conn.send(
+                    client.send(
                         '<= * {0} ({1})\n'.format(
                             room.channel_name,
                             len(room.clients))
                         )
-                conn.send('<= End of list')
+                client.send('<= End of list')
         elif message.startswith('/join'):  # join a chat room
             name = message.split('/join ')[1]
             current_room = if USERS[user].get('room')
