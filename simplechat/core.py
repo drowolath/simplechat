@@ -12,7 +12,9 @@ Users are stored in a dictionnary.
 import json
 import os
 import redis
+import socket
 import thread
+import time
 
 
 REDIS_URL = os.environ.get('REDIS_URL', '127.0.0.1:6379')
@@ -39,12 +41,16 @@ class ChatRoom(object):
 
     def register(self, client):
         """Register a client's connection"""
+        try:
+            client.setblocking(False)
+        except AttributeError:
+            pass
         self.clients.append(client)
 
     def send(self, client, data):
         """Send data to registered client. Delete on failure"""
         try:
-            client.send(data)
+            client.send(data + '\n=> ')
         except Exception:  # silent exception, because reasons are obvious
             self.clientss.remove(client)
         
@@ -60,5 +66,57 @@ class ChatRoom(object):
 
     def start(self):
         thread.start_new_thread(self.run, ())
+
+
+class SocketServer(object):
+    """Simple TCP socket server"""
+
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.setblocking(False)
+        self.socket.bind((self.host, self.port))
+        self.socket.listen(1)
+        print 'Listening on {0}'.format(self.socket.getsockname())
+
+    def accept(self):
+        """Continuously accept inbound connections"""
+        def inner_thread(client):
+            while True:
+                client.send('<= Login name?\n=> ')
+                try:
+                    name = client.recv(1024).strip()  # no trailing spaces
+                except socket.error:
+                    continue
+                if name in USERS:
+                    client.send('<= Sorry, username already taken\n')
+                elif name:
+                    client.setblocking(False)
+                    USERS[name] = client
+                    client.send('<= Welcome {0}\n=> '.format(name))
+                    break
+                else:
+                    client.send('<= Invalid username\n')
+                    
+        while True:
+            try:
+                client, address = self.socket.accept()
+            except socket.error:
+                break
+            msg = 'Welcome to the simplechat chat server'
+            client.send('<= {0}\n'.format(msg))
+            thread.start_new_thread(_inner_thread, (client,))
+
+    def recv(self):
+        """Continuously accept incoming messages"""
+        for user, client in USERS.items():
+            try:
+                message = client.recv(1024).strip()
+            except socket.error:
+                continue
+            time.sleep(.1)
+        
             
 # EOF
