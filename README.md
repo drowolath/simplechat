@@ -13,10 +13,10 @@ $ pip install -r requirements.txt
 $ python setup.py install
 ```
 
-## Launch
+## Launch TCP socket server
 
 ```
-$ simplechat
+$ simplechat runsocketserver 127.0.0.1 4242
 ```
 
 ## Telnet

@@ -16,17 +16,25 @@ import socket
 import string
 import thread
 import time
+from flask import Flask
+from flask_script import Manager
 
 
 REDIS_URL = os.environ.get('REDIS_URL', '127.0.0.1:6379')
 USERS = {}
 
 redis_server = redis.from_url(REDIS_URL)
+app = Flask(__name__)
+app.debug = 'DEBUG'
+manager = Manager(app)
 
 
 __all__ = [
+    'app',
+    'manager',
     'ChatRoom',
     'SocketServer',
+    'socketserver'
     ]
 
 
@@ -234,4 +242,14 @@ class SocketServer(object):
             client.send('=> ')
         else:
             client.send('<= Join a room to start chatting\n=> ')
+
+
+@manager.command
+def runsocketserver(host, port):
+    server = SocketServer(host, int(port))
+    server.run()
+
+if __name__ == '__main__':
+    manager.run()
+
 # EOF
