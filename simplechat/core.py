@@ -16,7 +16,7 @@ import socket
 import string
 import thread
 import time
-from flask import Flask
+from flask import Flask, redirect, url_for
 from flask_script import Manager
 
 
@@ -242,6 +242,24 @@ class SocketServer(object):
             client.send('=> ')
         else:
             client.send('<= Join a room to start chatting\n=> ')
+
+@app.route('/')
+def index():
+    if 'username' in session:
+        return '<p>Hello {0}</p>'.format(session['username'])
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        session['username'] = request.form['username']
+        return redirect(url_for('login'))
+    return """
+    <form action="" method="POST">
+      <p><input type=text name="username"/></p>
+      <p><input type=submit value=Login/></p>
+    </form>
+    """
 
 
 @manager.command
