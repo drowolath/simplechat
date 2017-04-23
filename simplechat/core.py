@@ -257,7 +257,7 @@ def login():
         if username and username not in USERS:
             session['username'] = request.form['username']
             return redirect(url_for('index'))
-    return render_template('login.html')
+    return render_template('register.html')
 
 @app.route('/logout')
 def logout():
