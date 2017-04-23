@@ -1,1 +1,3 @@
 include simplechat/*
+include simplechat/templates/*
+include simplechat/static/*
