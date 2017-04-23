@@ -254,11 +254,11 @@ def index():
 def login():
     if request.method == 'POST':
         session['username'] = request.form['username']
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     return """
     <form action="" method="POST">
       <p><input type=text name="username"/></p>
-      <p><input type=submit value=Login/></p>
+      <p><input type=submit value="Login"/></p>
     </form>
     """
 
