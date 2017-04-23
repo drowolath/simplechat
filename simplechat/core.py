@@ -16,7 +16,7 @@ import socket
 import string
 import thread
 import time
-from flask import Flask, redirect, session, url_for
+from flask import Flask, redirect, request, session, url_for
 from flask_script import Manager
 
 
