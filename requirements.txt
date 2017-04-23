@@ -9,7 +9,7 @@ click==6.7
 gevent==1.2.1
 gevent-websocket==0.10.1
 greenlet==0.4.12
+gunicorn==19.7.1
 itsdangerous==0.24
 redis==2.10.5
-simplechat==0.1
 wsgiref==0.1.2
