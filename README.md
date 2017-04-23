@@ -16,7 +16,14 @@ $ python setup.py install
 ## Launch TCP socket server
 
 ```
-$ simplechat runsocketserver 127.0.0.1 4242
+$ simplechat runsocketserver
+Listening on (127.0.0.1, 4242)
+```
+
+## Launch websocket server
+
+```
+$ gunicorn -k flask_sockets.worker simplechat:app -b 127.0.0.1:5000
 ```
 
 ## Telnet

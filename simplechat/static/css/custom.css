@@ -1,0 +1,9 @@
+
+.hero-spacer {
+    margin-top: 5px;
+}
+
+#chat-text {
+    overflow-y: scroll;
+    height: 200px;
+}

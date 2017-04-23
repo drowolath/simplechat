@@ -10,10 +10,11 @@
   <body>
     <div class="container">
       <div class="login-page">
+	<p>{% if error %}{{ error }}{% endif %}</p>
         <div class="form">
-	  <form class="register-form" method="POST" action="">
-	    <input type="text" placeholder="Login name"/>
-	    <button type="submit">OK</button>
+	  <form class="login-form" action="" method="post">
+	    <input type="text" placeholder="Login name" name="username"/>
+	    <button type="submit">Register</button>
 	  </form>
         </div>
       </div>

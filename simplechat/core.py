@@ -6,9 +6,14 @@ Simple chat server with a backend built with Redis PubSub.
 Each chatroom is backed up by a Redis channel to which
 users are subscribed.
 
-Users are stored in a dictionnary.
+By default, every new user is subscribed to the 'default' pubsub.
+Every message is stored as a dictionnary with 'name' and 'text'
+as keys holding data.
+
+There are two interfaces: telnet and websockets, they are isolated.
 """
 
+import gevent
 import json
 import os
 import redis
@@ -17,39 +22,44 @@ import string
 import thread
 import time
 from flask import Flask, redirect, render_template, request, session, url_for
+from flask_sockets import Sockets
 from flask_script import Manager
+
 
 
 REDIS_URL = os.environ.get('REDIS_URL', '127.0.0.1:6379')
 USERS = {}
+ROOMS = []
 
 redis_server = redis.from_url(REDIS_URL)
 app = Flask(__name__)
 app.secret_key = 'keep it secret'
 app.debug = 'DEBUG'
+websocketserver = Sockets(app)
 manager = Manager(app)
 
 
-__all__ = [
-    'app',
-    'manager',
-    'ChatRoom',
-    'SocketServer',
-    'runsocketserver'
-    ]
+class User(object):
+    
+    def __init__(self, name, connection=None, room=None, telnet=None):
+        self.name = name
+        self.connection = connection
+        self.room = room
+        self.telnet = telnet
+        USERS[name] = self
 
 
-class ChatRoom(object):
-    """Dummy interface for client registration and update"""
+class Backend(object):
+    """backend for simple chat based on redis PubSub"""
 
-    def __init__(self, channel_name):
-        self.channel_name = channel_name
-        self.clients = list()
+    def __init__(self, name=None):
+        self.name = name or 'default'
+        self.users = dict()
         self.pubsub = redis_server.pubsub()
-        self.pubsub.subscribe(self.channel_name)
+        self.pubsub.subscribe(self.name)
 
     def __str__(self):
-        return '<ChatRoom {0}>'.format(self.channel_name)
+        return '<ChatRoom {0}>'.format(self.name)
 
     def __unpack__(self):
         """Yield out data from pubsub"""
@@ -58,50 +68,213 @@ class ChatRoom(object):
             if item['type'] == 'message':
                 yield message
 
-    def register(self, client):
-        """Register a client's connection"""
-        self.clients.append(client)
-
-    def send(self, client, data):
-        """Send data to registered client. Delete on failure"""
-        try:
-            client.send('<= ' + data + '\n=> ')
-        except Exception:  # silent exception, because reasons are obvious
-            self.clients.remove(client)
-
-    def publish(self, client, data):
-        """Publish in chatroom as given client"""
+    def register(self, user):
+        """Register a user"""
+        self.users[user.name] = user
+        user.room = self
         redis_server.publish(
-            self.channel_name,
-            json.dumps(
-                {
-                    'user': str(client),
-                    'message': data
-                    }
-                )
+            self.name,
+            json.dumps({
+                'name': 'simplechat',
+                'text': '{0} joined the chat'.format(user.name)
+                })
             )
+
+    def remove(self, user):
+        """Remove a user"""
+        if self.name != 'default':
+            redis_server.publish(
+                self.name,
+                json.dumps({
+                    'name': 'simplechat',
+                    'text': '{0} left the room'.format(user.name)
+                    })
+            )
+        del self.users[user.name]
+
+    def parse(self, data):
+        """Parsing messages"""
+        payload = json.loads(data)
+        name = payload['name']
+        message = payload['text']
+        user = self.users[name]
+        if self.name == 'default':  # commands available in default        
+            if message.startswith('/join'):
+                new_room = message.split('/join ')[1]
+                if user.telnet:
+                    new_room = 'telnet.{0}'.format(new_room)
+                room = [i for i in ROOMS if i.name == new_room]
+                if not room:
+                    room = Backend(new_room)
+                    ROOMS.append(room)
+                    room.start()
+                else:
+                    room = room[0]
+                message = [
+                    'Entering room: {0}'.format(room.name),
+                    'Active users are:{0}'.format(
+                        '\n'.join(['* {0}'.format(i) for i in room.users])),
+                    '* {0} (** this is you)'.format(user.name),
+                    'End of list'
+                    ]
+                room.register(user)
+                self.remove(user)
+            elif message == '/users':
+                users = list()
+                for i in USERS:
+                    if i == user.name:
+                        users.append('* {0} (**this is you)'.format(i))
+                    else:
+                        users.append('* {0}'.format(i))
+                message = [
+                    'Connected users are:',
+                    '\n'.join(users),
+                    'End of list'
+                    ]
+            elif message == '/rooms':
+                rooms = [
+                    i for i in ROOMS
+                    if i.name != 'default' and i.startswith('telnet.')
+                    ]
+                if rooms:
+                    message = [
+                        'Active rooms are:',
+                        '\n'.join(['* {0} ({1})'.format(
+                            i.name, len(i.users)
+                            ) for i in rooms]),
+                        'End of list'
+                        ]
+                else:
+                    message = ['No active room detected. Create one']
+            elif message == '/quit':
+                self.remove(user)
+                message = ['BYE']
+                del USERS[user.name]
+                redis_server.srem('users', user.name)
+            else:
+                message = ['Sorry, unknown command or wrong domain']
+        elif message == '/leave':
+            room = filter(lambda x: x.name=='default', ROOMS)[0]
+            room.register(user)
+            self.remove(user)
+            message = ['Leaving room {0}'.format(self.name)]
+        else:
+            message = ['Sorry, unknown command or wrong domain']
+        return {'name': 'simplechat', 'text': '\n'.join(message)}
+        
+    def send(self, user, data):
+        """Send data to registered user. Delete on failure"""
+        payload = json.loads(data)
+        name = payload['name']
+        message = payload['text']
+        null_data = (
+            (message.startswith('/') and user.name != name) or
+            (message == '{0} joined the chat'.format(user.name)) or
+            (message == '{0} left the room'.format(user.name))
+            )
+        if message.startswith('/') and user.name == name:
+            payload = self.parse(data)
+        elif self.name == 'default' and user.name == name:
+            payload = {
+                'name': 'simplechat',
+                'text': 'Please, join a room to start a discussion'
+                }
+        elif null_data:
+            payload = None
+
+        if payload:
+            try:
+                if user.room.name != self.name:
+                    user.room.send(user, json.dumps(payload))
+                else:
+                    if user.telnet:
+                        if payload['name'] == 'simplechat':
+                            data = '<= {0}\n=> '.format(
+                                payload['text'].replace('\n', '\n=> ')
+                                )
+                        else:
+                            data = '<= ({0}) {1}'.format(payload['text'])
+                    else:
+                        data = json.dumps(payload)
+                    user.connection.send(data)
+            except Exception as exc:  # directly discard on conn failure
+                self.remove(user)
             
     def run(self):
         """Listen and send messages"""
         for data in self.__unpack__():
-            data = json.loads(data)
-            publisher = data['user']
-            message = data['message']
-            for client in self.clients:
-                if str(client) != publisher:
-                    thread.start_new_thread(self.send, (client, message))
+            for _, user in self.users.items():
+                thread.start_new_thread(self.send, (user, data))
 
     def start(self):
         thread.start_new_thread(self.run, ())
 
 
+default = Backend()
+ROOMS.append(default)
+default.start()
+
+        
+@app.route('/')
+def index():
+    if 'username' in session:
+        username = session['username']
+        if not USERS:
+            return redirect(url_for('logout'))
+        return render_template('index.html', username=username)
+    return redirect(url_for('register'))
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    error = None
+    if request.method == 'POST':
+        username = request.form['username']
+        if username and not username in USERS:
+            User(username, room=default)
+            session['username'] = request.form['username']
+            return redirect(url_for('index'))
+        elif not username or username[0] not in string.letters + string.digits:
+            error = 'Invalid user name'
+        elif username in USERS:
+            error = 'User name already taken'
+    return render_template('register.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    session.clear()
+    return redirect(url_for('index'))
+
+@websocketserver.route('/submit')
+def inbox(ws):
+    """Receives incoming chat messages, inserts them into Redis."""
+    username = session['username']
+    user = USERS[username]
+    while not ws.closed:
+        # Sleep to prevent *constant* context-switches.
+        gevent.sleep(0.1)
+        message = ws.receive()
+        if message:
+            redis_server.publish(user.room.name, message)
+
+@websocketserver.route('/receive')
+def outbox(ws):
+    """Sends outgoing chat messages"""
+    username = session['username']
+    user = USERS[username]
+    user.connection = ws
+    user.room.register(user)
+    while not ws.closed:
+        # Context switch while `ChatBackend.start` is running in the background.
+        gevent.sleep(0.1)
+
+        
 class SocketServer(object):
     """Simple TCP socket server"""
 
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.rooms = {}
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.setblocking(False)
@@ -125,7 +298,10 @@ class SocketServer(object):
                 else:
                     client.setblocking(False)
                     client.send('<= Welcome {0}\n=> '.format(name))
-                    USERS[name] = {'connection': client}
+                    user = User(
+                        name, room=default, connection=client, telnet=True
+                        )
+                    default.register(user)
                     break
                     
         while True:
@@ -147,12 +323,14 @@ class SocketServer(object):
 
     def recv(self):
         """Continuously accept incoming messages"""
-        for user, infos in USERS.items():
+        for _, user in USERS.items():
             try:
-                message = infos['connection'].recv(1024).strip()
+                message = user.connection.recv(1024).strip()
+                data = json.dumps({'name': user.name, 'text': message})
             except socket.error:
                 continue
-            self.process_messages(user, message)
+            redis_server.publish(user.room.name, data)
+            user.connection.send('=> ')
             time.sleep(.1)
 
     def run(self):
@@ -165,108 +343,8 @@ class SocketServer(object):
                 print 'Closing server'
                 break
 
-    def process_messages(self, user, message):
-        """Process messages"""
-        client = USERS[user]['connection']
-        if message.split()[0] in ['@'+i for i in USERS]:  # DM
-            recipient = message.split()[0]
-            message = message.split(recipient)[1].lstrip()
-            for i, j in USERS.items():
-                if '@'+i == recipient:
-                    j['connection'].send(
-                        '<= ({0}) {1}\n=> '.format(user, message)
-                        )
-                    break
-            client.send('=> ')
-        elif message == '/users':  # list users on the server
-            client.send('<= Active users are:\n')
-            for i in USERS:
-                msg = '<= * {0}'.format(i)
-                if i == user:
-                    msg += ' (**this is you)'
-                client.send(msg + '\n')
-            client.send('=> ')
-        elif message == '/rooms':  # list rooms and their users
-            if not self.rooms:
-                client.send('<= No active room detected\n')
-                client.send('<= Create one, by using "/join room_name"')
-            else:
-                client.send('<= Active rooms are:\n')
-                for name, room in self.rooms.items():
-                    client.send(
-                        '<= * {0} ({1})\n'.format(name, len(room.clients))
-                        )
-                client.send('<= End of list\n=> ')
-        elif message.startswith('/join'):  # join a chat room
-            name = message.split('/join ')[1]
-            current_room = USERS[user].get('room')
-            if current_room == name:
-                client.send('<= You are already here\n')
-            elif current_room:
-                self.process_messages(user, '/leave')
-            elif name not in self.rooms:  # create room
-                room = ChatRoom(name)
-                self.rooms[name] = room
-                room.start()
-            else:
-                room = self.rooms[name]
-            room.register(client)
-            USERS[user]['room'] = name
-            room.publish(
-                client, 'new user joined the room: {0}'.format(user)
-                )
-            client.send('<= Entering room: {0}\n'.format(name))
-            for i, infos in USERS.items():
-                if infos['connection'] in room.clients:
-                    msg = '<= * {0}'.format(i)
-                    if i == user:
-                        msg += ' (**this is you)'
-                    client.send(msg + '\n')
-            client.send('<= End of list\n=> ')
-        elif message == '/leave':
-            current_room = USERS[user].get('room')
-            if current_room:
-                message = '{0} has left the room'.format(user)
-                client.send('<= Leaving room {0}\n=> '.format(current_room))
-                self.rooms[current_room].publish(client, message)
-                self.rooms[current_room].clients.remove(client)
-                del USERS[user]['room']
-        elif message == '/quit':
-            self.process_messages(user, '/leave')
-            client.send('<= BYE\n')
-            del USERS[user]
-        elif message.startswith('/'):
-            client.send('<= Sorry, unknown command\n=> ')
-        elif message and USERS[user].get('room'):
-            message = '{0}: {1}'.format(user, message)
-            self.rooms[USERS[user].get('room')].publish(client, message)
-            client.send('=> ')
-        else:
-            client.send('<= Join a room to start chatting\n=> ')
 
-@app.route('/')
-def index():
-    if 'username' in session:
-        return render_template('index.html')
-    return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        if username and username not in USERS:
-            session['username'] = request.form['username']
-            return redirect(url_for('index'))
-    return render_template('register.html')
-
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    session.clear()
-    return redirect(url_for('index'))
-
-
-@manager.option('-h', '--host', dest='host')
+@manager.option('-H', '--host', dest='host')
 @manager.option('-p', '--port', dest='port')
 def runsocketserver(host=None, port=None):
     host = host or '127.0.0.1'
@@ -274,7 +352,7 @@ def runsocketserver(host=None, port=None):
     server = SocketServer(host, int(port))
     server.run()
 
+
 if __name__ == '__main__':
     manager.run()
-
 # EOF
