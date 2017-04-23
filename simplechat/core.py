@@ -34,7 +34,7 @@ __all__ = [
     'manager',
     'ChatRoom',
     'SocketServer',
-    'socketserver'
+    'runsocketserver'
     ]
 
 
