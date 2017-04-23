@@ -16,7 +16,7 @@ import socket
 import string
 import thread
 import time
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
 from flask_script import Manager
 
 
@@ -247,24 +247,29 @@ class SocketServer(object):
 @app.route('/')
 def index():
     if 'username' in session:
-        return '<p>Hello {0}</p>'.format(session['username'])
+        return render_template('index.html')
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        session['username'] = request.form['username']
-        return redirect(url_for('index'))
-    return """
-    <form action="" method="POST">
-      <p><input type=text name="username"/></p>
-      <p><input type=submit value="Login"/></p>
-    </form>
-    """
+        username = request.form['username']
+        if username and username not in USERS:
+            session['username'] = request.form['username']
+            return redirect(url_for('index'))
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('index'))
 
 
-@manager.command
-def runsocketserver(host, port):
+@manager.option('-h', '--host', dest='host')
+@manager.option('-p', '--port', dest='port')
+def runsocketserver(host=None, port=None):
+    host = host or '127.0.0.1'
+    port = port or 4242
     server = SocketServer(host, int(port))
     server.run()
 
