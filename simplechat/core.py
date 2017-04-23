@@ -16,7 +16,7 @@ import socket
 import string
 import thread
 import time
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, session, url_for
 from flask_script import Manager
 
 
@@ -25,6 +25,7 @@ USERS = {}
 
 redis_server = redis.from_url(REDIS_URL)
 app = Flask(__name__)
+app.secret_key = 'keep it secret'
 app.debug = 'DEBUG'
 manager = Manager(app)
 
