@@ -40,6 +40,5 @@ $ telnet 127.0.0.1 4242
 
 ## via Web browser
 
-```
-visit http://localhost:5000
-```
+If you have installed and launched the server locally, you can visit http://localhost:5000 .
+Or, you can visit the demo here: http://afternoon-bastion-67630.herokuapp.com
