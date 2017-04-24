@@ -347,7 +347,7 @@ class SocketServer(object):
 @manager.option('-H', '--host', dest='host')
 @manager.option('-p', '--port', dest='port')
 def runsocketserver(host=None, port=None):
-    host = host or '127.0.0.1'
+    host = host or '0.0.0.0'
     port = port or 4242
     server = SocketServer(host, int(port))
     server.run()
