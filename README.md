@@ -6,6 +6,12 @@ Each chat room is a Redis channel to which connected users subscribe.
 When a message is published on the channel, all the subscribers receive it.
 The publisher does not receive the same message.
 
+There are currently 2 implemented interfaces (telnet and http) running separately.
+You can check demo for:
+
+telnet: ```telnet ec2-35-154-117-64.ap-south-1.compute.amazonaws.com 4242```
+http: ```http://ec2-35-154-117-64.ap-south-1.compute.amazonaws.com:8000```
+
 ## Installation
 
 ```
@@ -41,4 +47,3 @@ $ telnet 127.0.0.1 4242
 ## via Web browser
 
 If you have installed and launched the server locally, you can visit http://localhost:5000 .
-Or, you can visit the demo here: http://afternoon-bastion-67630.herokuapp.com
