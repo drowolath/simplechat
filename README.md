@@ -15,7 +15,10 @@ http: ```http://ec2-35-154-117-64.ap-south-1.compute.amazonaws.com:8000```
 
 ## Installation
 
+Currently tested only on GNU/Linux Debian Jessie
+
 ```
+$ sudo apt-get install python-dev python-pip python-virtualenv
 $ git clone https://github.com/drowolath/simplechat.git
 $ virtualenv venv
 $ source venv/bin/activate
@@ -28,17 +31,17 @@ $ source venv/bin/activate
 ## Launch TCP socket server
 
 ```
-$ simplechat runsocketserver
+(venv)$ simplechat runsocketserver
 Listening on (0.0.0.0, 4242)
 ```
 
-## Launch websocket server
+## Launch websocket server for http interface
 
 ```
-$ gunicorn -k flask_sockets.worker simplechat:app -b 0.0.0.0:5000
+(venv)$ gunicorn -k flask_sockets.worker simplechat:app -b 0.0.0.0:5000
 ```
 
-## Telnet
+## Telnet into it
 
 ```
 $ telnet 127.0.0.1 4242
