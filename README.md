@@ -10,6 +10,7 @@ There are currently 2 implemented interfaces (telnet and http) running separatel
 You can check demo for:
 
 telnet: ```telnet ec2-35-154-117-64.ap-south-1.compute.amazonaws.com 4242```
+
 http: ```http://ec2-35-154-117-64.ap-south-1.compute.amazonaws.com:8000```
 
 ## Installation
